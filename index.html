@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arch 01 — Mixture of Experts — Total Params vs Active Params</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-card: #0d1117;
+            --bg-code: #161b22;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent: #76B900;
+            --accent-dim: #76B90044;
+            --accent-glow: #76B90033;
+            --border: #21262d;
+            --font-display: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+            --font-body: 'Inter', sans-serif;
+            --max-width: 900px;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 17px;
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            position: relative;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .hero > * { position: relative; z-index: 1; }
+        .series-label {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+        .hero h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.2;
+            margin-bottom: 1rem;
+        }
+        .hero h1 .accent { color: var(--accent); }
+        .hero .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            max-width: 640px;
+            margin-bottom: 2rem;
+        }
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-bottom: 2.5rem;
+        }
+        .tag {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            background: var(--accent-dim);
+            white-space: nowrap;
+        }
+        .pipeline {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            margin-bottom: 1rem;
+            max-width: var(--max-width);
+        }
+        .pipeline-step {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            padding: 0.3rem 0.7rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .pipeline-arrow { color: var(--accent); font-size: 0.9rem; font-weight: 700; }
+        .slide {
+            min-height: 100vh;
+            max-width: var(--max-width);
+            margin: 0 auto;
+            padding: 4rem 1.5rem;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .slide-number {
+            font-family: var(--font-display);
+            font-size: 5rem;
+            font-weight: 700;
+            color: var(--accent-dim);
+            position: absolute;
+            top: 2rem;
+            right: 1.5rem;
+            line-height: 1;
+            user-select: none;
+        }
+        .slide h2 {
+            font-family: var(--font-display);
+            font-size: 1.9rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 1.5rem;
+            line-height: 1.25;
+        }
+        .slide h3 {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .slide p { margin-bottom: 1rem; color: var(--text-secondary); }
+        .slide p strong { color: var(--text-primary); }
+        .slide ul, .slide ol { margin-bottom: 1rem; padding-left: 1.5rem; color: var(--text-secondary); }
+        .slide li { margin-bottom: 0.4rem; }
+        .slide li strong { color: var(--text-primary); }
+        .slide code {
+            font-family: var(--font-mono);
+            font-size: 0.88em;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            padding: 0.05rem 0.35rem;
+            border-radius: 3px;
+            color: #c9d1d9;
+        }
+        .code-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 1.25rem 0;
+            overflow: hidden;
+        }
+        .code-header {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            background: rgba(118, 185, 0, 0.08);
+            padding: 0.4rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .code-block pre { margin: 0; padding: 1rem; overflow-x: auto; }
+        .code-block code {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #c9d1d9;
+            background: transparent;
+            border: none;
+            padding: 0;
+        }
+        .kw { color: #ff7b72; }
+        .fn { color: #d2a8ff; }
+        .str { color: #a5d6ff; }
+        .cm { color: #8b949e; font-style: italic; }
+        .num { color: #79c0ff; }
+        .type { color: #ffa657; }
+        .dir { color: #ff7b72; }
+        .mac { color: #ffa657; }
+        .table-wrap {
+            overflow-x: auto;
+            margin: 1.25rem 0;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-family: var(--font-display);
+            white-space: nowrap;
+        }
+        td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:nth-child(even) td { background: rgba(13, 17, 23, 0.5); }
+        .diagram-flow {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-box {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            text-align: center;
+            white-space: nowrap;
+        }
+        .diagram-box.accent { border-color: var(--accent); color: var(--accent); background: rgba(118, 185, 0, 0.08); }
+        .diagram-box.dim { color: var(--text-secondary); border-color: var(--border); }
+        .diagram-arrow { color: var(--accent); font-size: 1.3rem; font-weight: 700; }
+        .diagram-vertical {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-vertical .diagram-arrow { font-size: 1.1rem; }
+        .hierarchy {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .hierarchy-level { display: flex; align-items: center; gap: 0.75rem; }
+        .hierarchy-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            min-width: 80px;
+            text-align: right;
+        }
+        .hierarchy-items { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+        .hierarchy-item {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        .hierarchy-item.accent { border-color: var(--accent); color: var(--accent); background: rgba(118, 185, 0, 0.08); }
+        .diagram-grid {
+            display: grid;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+        .diagram-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+        .diagram-panel {
+            padding: 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        .diagram-panel.accent-border { border-left: 3px solid var(--accent); }
+        .diagram-panel h4 {
+            font-family: var(--font-display);
+            font-size: 1rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+        }
+        .diagram-panel p, .diagram-panel ul { font-size: 0.85rem; }
+        .callout {
+            background: var(--bg-card);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 8px 8px 0;
+            padding: 1rem 1.25rem;
+            margin: 1.25rem 0;
+        }
+        .callout p { margin-bottom: 0; }
+        .callout p + p { margin-top: 0.5rem; }
+        .callout .callout-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.3rem;
+        }
+        .contents-list { list-style: none; padding-left: 0; counter-reset: contents; }
+        .contents-list li {
+            counter-increment: contents;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .contents-list li:last-child { border-bottom: none; }
+        .contents-list li::before {
+            content: counter(contents, decimal-leading-zero);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            min-width: 2rem;
+        }
+        .contents-list a { color: var(--text-primary); text-decoration: none; transition: color 0.2s; }
+        .contents-list a:hover { color: var(--accent); }
+        .footer {
+            text-align: center;
+            padding: 3rem 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+            max-width: var(--max-width);
+            margin: 0 auto;
+        }
+        .footer a { color: var(--accent); text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+        .canvas-wrap {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1.25rem 0;
+            overflow-x: auto;
+        }
+        .canvas-wrap canvas, .canvas-wrap svg { display: block; margin: 0 auto; max-width: 100%; }
+        .badge {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            padding: 0.1rem 0.45rem;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            vertical-align: middle;
+            margin-left: 0.3rem;
+        }
+        .badge.ok    { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+        .badge.warn  { border-color: #ffa657; color: #ffa657; background: rgba(255,166,87,0.08); }
+        .badge.bad   { border-color: #ff7b72; color: #ff7b72; background: rgba(255,123,114,0.08); }
+        @media (max-width: 640px) {
+            .slide { padding: 3rem 1rem; min-height: auto; }
+            .slide-number { font-size: 3rem; top: 1.5rem; right: 1rem; }
+            .slide h2 { font-size: 1.5rem; }
+            .diagram-grid.cols-2, .diagram-grid.cols-3 { grid-template-columns: 1fr; }
+            .pipeline { gap: 0.15rem; }
+            .pipeline-step { font-size: 0.6rem; padding: 0.2rem 0.4rem; }
+            .hero h1 { font-size: 1.8rem; }
+            table { font-size: 0.78rem; }
+        }
+    </style>
+</head>
+<body>
+<header class="hero">
+    <div class="series-label">Modern Architectures Series &mdash; Presentation 01</div>
+    <h1>Mixture of <span class="accent">Experts</span> &mdash; Total Params vs Active Params</h1>
+    <p class="subtitle">How sparse gating unlocks trillion-parameter models at fraction-of-parameter compute: Switch Transformer roots, top-K routing, Mixtral 8x7B, DeepSeek-V3, load-balance losses, and expert parallelism.</p>
+
+    <div class="tags">
+        <span class="tag">MoE</span>
+        <span class="tag">Sparse Gating</span>
+        <span class="tag">Mixtral</span>
+        <span class="tag">DeepSeek-V3</span>
+        <span class="tag">Top-K Routing</span>
+        <span class="tag">Expert Parallelism</span>
+        <span class="tag">Load Balance</span>
+    </div>
+
+    <div class="pipeline">
+        <span class="pipeline-step">Token</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Router</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Top-K Experts</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Weighted Sum</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Residual</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Next Layer</span>
+    </div>
+</header>
+
+<section class="slide" id="slide-00">
+    <div class="slide-number">00</div>
+    <h2>Topics We'll Cover</h2>
+    <ul class="contents-list">
+        <li><a href="#slide-01">Why MoE &mdash; Total Params vs Active Params</a></li>
+        <li><a href="#slide-02">Switch Transformer Roots</a></li>
+        <li><a href="#slide-03">Routing &mdash; Top-K Gating &amp; Expert Choice</a></li>
+        <li><a href="#slide-04">Mixtral &mdash; 8 Experts, 2 Active, Gate Noise</a></li>
+        <li><a href="#slide-05">DeepSeek-V3 &mdash; Fine-Grained &amp; Shared Experts, MTP</a></li>
+        <li><a href="#slide-06">Load Balance Loss &amp; Auxiliary Losses</a></li>
+        <li><a href="#slide-07">Inference &mdash; Expert Parallel, EP Routing Overhead</a></li>
+        <li><a href="#slide-08">Training Pitfalls &mdash; Dead Experts, Instability</a></li>
+        <li><a href="#slide-09">What to Take Away</a></li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-01">
+    <div class="slide-number">01</div>
+    <h2>Why MoE &mdash; Total Params vs Active Params</h2>
+    <p>The core intuition is simple: the parameter count of a model determines its <em>capacity</em>, but it is the <em>active</em> parameter count at each forward pass that determines its <strong>compute cost</strong>. Dense transformers conflate the two &mdash; every token visits every weight. Mixture-of-Experts decouples them.</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Dense FFN (GPT-3 style)</h4>
+            <p><strong>175B</strong> total params. Every token activates all 175B. Training FLOPs scale linearly with both token count and parameter count. FLOP budget is fully spent every forward step.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>MoE FFN (Mixtral 8x7B)</h4>
+            <p><strong>46.7B</strong> total params. Every token activates <strong>12.9B</strong> &mdash; two of eight expert FFNs. Same capacity as a ~46B dense model; compute of a ~13B dense model.</p>
+        </div>
+    </div>
+
+    <p>The MoE layer replaces the single feed-forward block in each transformer layer with <em>E</em> expert FFNs and a lightweight router. Each token is routed to <em>K</em> of the <em>E</em> experts; the outputs are weighted and summed before rejoining the residual stream. Attention layers are unchanged.</p>
+
+    <div class="callout">
+        <div class="callout-label">The scaling argument</div>
+        <p>Kaplan et al. (2020) showed that loss scales as a power law with compute. MoE attacks the same loss target at lower FLOPs by growing the total parameter count (capacity) without growing active params (cost). A 2022 Google paper (<em>Scaling Laws for Expert Specialisation</em>) confirmed the MoE Pareto front sits consistently above dense models when matched on FLOPs rather than total params.</p>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Model</th><th>Total params</th><th>Active params/token</th><th>Ratio</th></tr></thead>
+            <tbody>
+                <tr><td>GPT-3</td><td>175B</td><td>175B</td><td>1.0&times;</td></tr>
+                <tr><td>Switch-C (2021)</td><td>1.6T</td><td>~7B</td><td>~0.004&times;</td></tr>
+                <tr><td>Mixtral 8x7B (2023)</td><td>46.7B</td><td>12.9B</td><td>0.28&times;</td></tr>
+                <tr><td>Mixtral 8x22B (2024)</td><td>141B</td><td>39B</td><td>0.28&times;</td></tr>
+                <tr><td>DeepSeek-V3 (2024)</td><td>671B</td><td>37B</td><td>0.055&times;</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="slide" id="slide-02">
+    <div class="slide-number">02</div>
+    <h2>Switch Transformer Roots</h2>
+    <p>Fedus et al. (2022, NeurIPS) published the landmark <strong>Switch Transformer</strong>, scaling a T5-style encoder-decoder to <strong>1.6 trillion parameters</strong> on a TPU v3 pod while using only a fraction of those params per token. The key architectural choice: route each token to exactly <strong>K=1 expert</strong> (hard top-1), reducing the routing from a soft mixture to a switch.</p>
+
+    <div class="diagram-flow">
+        <div class="diagram-box accent">Token h<sub>t</sub></div>
+        <span class="diagram-arrow">&rarr;</span>
+        <div class="diagram-box">Router W<sub>r</sub> h<sub>t</sub></div>
+        <span class="diagram-arrow">&rarr;</span>
+        <div class="diagram-box">Softmax &rarr; top-1</div>
+        <span class="diagram-arrow">&rarr;</span>
+        <div class="diagram-box accent">Expert e*</div>
+        <span class="diagram-arrow">&rarr;</span>
+        <div class="diagram-box">g<sub>e*</sub> &middot; FFN<sub>e*</sub>(h<sub>t</sub>)</div>
+    </div>
+
+    <h3>Key design decisions in the original Switch paper</h3>
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Expert capacity buffer C</h4>
+            <p>Each expert has a capacity of <code>C = (tokens/experts) &times; capacity_factor</code>. Overflow tokens skip the expert and pass through unchanged &mdash; this is the <em>token drop</em> mechanism. Capacity factor 1.25 is the default: 25% headroom above uniform load.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Selective precision</h4>
+            <p>Switch used <strong>bfloat16</strong> for most ops but <strong>float32</strong> for the routing softmax and the weight update. This was an early observation that mixed-precision MoE training is brittle without careful casting at the router.</p>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Why top-1 mattered</div>
+        <p>Top-1 routing makes the expert assignment a <em>discrete</em> decision, removing the soft-mixture gradient through the router. This forced Fedus et al. to rely entirely on the auxiliary load-balance loss to prevent all tokens collapsing to one expert. It worked surprisingly well &mdash; Switch-Base matched T5-Base quality in one-sixth the pre-training time on identical hardware.</p>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">switch_router.py &mdash; minimal PyTorch top-1 gating</div>
+<pre><code><span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn, torch.nn.functional <span class="kw">as</span> F
+
+<span class="kw">class</span> <span class="type">SwitchRouter</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(<span class="kw">self</span>, d_model: <span class="type">int</span>, n_experts: <span class="type">int</span>):
+        <span class="fn">super</span>().__init__()
+        <span class="kw">self</span>.w = nn.<span class="type">Linear</span>(d_model, n_experts, bias=<span class="kw">False</span>)
+
+    <span class="kw">def</span> <span class="fn">forward</span>(<span class="kw">self</span>, x):  <span class="cm"># x: (B, T, D)</span>
+        logits = <span class="kw">self</span>.<span class="fn">w</span>(x)        <span class="cm"># (B, T, E)</span>
+        gates  = F.<span class="fn">softmax</span>(logits, dim=-<span class="num">1</span>)
+        idx    = gates.<span class="fn">argmax</span>(dim=-<span class="num">1</span>)  <span class="cm"># top-1 index</span>
+        g      = gates.<span class="fn">gather</span>(-<span class="num">1</span>, idx.<span class="fn">unsqueeze</span>(-<span class="num">1</span>)).<span class="fn">squeeze</span>(-<span class="num">1</span>)
+        <span class="kw">return</span> idx, g  <span class="cm"># (B,T) and (B,T)</span></code></pre>
+    </div>
+</section>
+
+<section class="slide" id="slide-03">
+    <div class="slide-number">03</div>
+    <h2>Routing &mdash; Top-K Gating &amp; Expert Choice</h2>
+    <p>Two families of routing dominate the literature: <strong>token-choice</strong> (each token picks its K favourite experts) and <strong>expert-choice</strong> (each expert picks its favourite T tokens). They have complementary failure modes.</p>
+
+    <h3>Top-K token-choice routing (Shazeer et al. 2017)</h3>
+    <p>The original sparsely-gated MoE from <em>Outrageously Large Neural Networks</em> used top-2 routing with additive Gaussian noise to encourage exploration:</p>
+
+    <div class="code-block">
+        <div class="code-header">Top-K routing with noise injection (Shazeer 2017)</div>
+<pre><code><span class="cm"># H(x): noisy logits before softmax</span>
+H(x)<sub>i</sub> = (x · W<sub>g</sub>)<sub>i</sub>  +  StandardNormal() · Softplus((x · W<sub>noise</sub>)<sub>i</sub>)
+
+<span class="cm"># Keep only top-K, set rest to -inf, then softmax</span>
+gates = Softmax(KeepTopK(H(x), k))
+
+output = <span class="fn">sum</span>(gates<sub>i</sub> · Expert<sub>i</sub>(x)  <span class="kw">for</span> i <span class="kw">in</span> top-K)</code></pre>
+    </div>
+
+    <h3>Expert-choice routing (Zhou et al. 2022, Google)</h3>
+    <p>Expert-choice flips the direction: each of the <em>E</em> experts selects its top-<em>C</em> tokens from the batch. This <strong>guarantees</strong> perfect load balance by construction &mdash; no capacity-overflow drops. The downside: tokens are no longer guaranteed to be processed by any expert. For short sequences this can hurt quality.</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Token-choice (top-K)</h4>
+            <ul>
+                <li>Token selects K experts from E</li>
+                <li>Popular experts overflow &rarr; token drop</li>
+                <li>Requires auxiliary load-balance loss</li>
+                <li>Used by: Mixtral, DeepSeek, most OSS MoE</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Expert-choice</h4>
+            <ul>
+                <li>Expert selects top-C tokens from batch</li>
+                <li>Load balance guaranteed by design</li>
+                <li>Tokens can be skipped entirely</li>
+                <li>Used by: some Google internal models, ST-MoE</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Heterogeneous routing</div>
+        <p>Some recent work (e.g. DeepSeek-V2, Qwen-MoE) uses <strong>shared experts</strong> that every token visits unconditionally, plus a pool of routed experts chosen by top-K. This hybrid ensures that common, general-purpose computations are always applied, while rare specialised knowledge is routed sparsely.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-04">
+    <div class="slide-number">04</div>
+    <h2>Mixtral &mdash; 8 Experts, 2 Active, Gate Noise</h2>
+    <p>Mistral AI released <strong>Mixtral 8x7B</strong> in December 2023 (Apache 2.0), the first widely-deployed open-weights MoE that outperformed LLaMA-2 70B on most benchmarks while activating fewer parameters per token than LLaMA-2 13B.</p>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Hyperparameter</th><th>Value</th><th>Notes</th></tr></thead>
+            <tbody>
+                <tr><td>Total parameters</td><td>46.7B</td><td>8 experts &times; 7B per-expert FFN + shared attention</td></tr>
+                <tr><td>Active params / token</td><td>12.9B</td><td>2 of 8 experts selected each token</td></tr>
+                <tr><td>Experts per layer</td><td>8</td><td>K=2, so 2 experts selected</td></tr>
+                <tr><td>Hidden dim</td><td>4096</td><td>Same as LLaMA-2 13B</td></tr>
+                <tr><td>Intermediate dim</td><td>14336 (per expert)</td><td>SwiGLU activated</td></tr>
+                <tr><td>Layers</td><td>32</td><td>MoE in all layers</td></tr>
+                <tr><td>Context length</td><td>32768</td><td>Sliding window attention + rope</td></tr>
+                <tr><td>Vocabulary</td><td>32000</td><td>SentencePiece BPE</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>The router in Mixtral</h3>
+    <p>Mixtral uses a standard top-2 linear router with <strong>no jitter noise at inference</strong> (noise is added during training only, following Shazeer 2017). The gating weights are computed as:</p>
+
+    <div class="code-block">
+        <div class="code-header">Mixtral gating (pseudocode, per token)</div>
+<pre><code>g_raw  = <span class="fn">softmax</span>(W_r · x)          <span class="cm"># (E,) = (8,)</span>
+top2   = <span class="fn">topk</span>(g_raw, k=<span class="num">2</span>)          <span class="cm"># indices and values</span>
+g_norm = top2.values / top2.values.<span class="fn">sum</span>()  <span class="cm"># re-normalise to 1</span>
+y = <span class="fn">sum</span>(g_norm[i] * <span class="fn">FFN_i</span>(x) <span class="kw">for</span> i <span class="kw">in</span> top2.indices)</code></pre>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Sliding window attention in Mixtral</div>
+        <p>Mixtral layers alternate between <em>full</em> attention layers and <em>sliding-window</em> attention layers (window W=4096). This predates the dedicated long-context techniques in Arch 03 but already addresses the quadratic bottleneck for long sequences. The MoE FFN is orthogonal to the attention choice &mdash; any attention variant can be paired with MoE.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-05">
+    <div class="slide-number">05</div>
+    <h2>DeepSeek-V3 &mdash; Fine-Grained &amp; Shared Experts, MTP</h2>
+    <p>DeepSeek-V3 (December 2024) pushed MoE design further with two key innovations: <strong>fine-grained expert decomposition</strong> and <strong>multi-token prediction (MTP)</strong> as an auxiliary training objective. The model totals 671B parameters and is competitive with GPT-4o class models at a fraction of reported training cost.</p>
+
+    <h3>Fine-grained MoE (DeepSeekMoE architecture)</h3>
+    <p>Instead of 8 large experts, DeepSeek-V3 uses <strong>256 fine-grained routed experts</strong> per layer (each with ~1/8 the FFN dimension of a coarse expert) plus <strong>1 shared expert</strong> that every token visits. Top-8 out of 256 are selected. This gives:</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Coarse MoE (Mixtral-style)</h4>
+            <p>8 experts, intermediate dim ~14K. Each expert is a full-size FFN. Top-2 selected. Expert overlap between different tokens is high &mdash; specialisation is limited.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Fine-grained MoE (DeepSeek-V3)</h4>
+            <p>256 routed experts, intermediate dim ~1.5K each. Plus 1 shared expert (full dim). Top-8 selected. Tokens can activate any combination of 256 fine-grained slots &rarr; far higher effective specialisation.</p>
+        </div>
+    </div>
+
+    <h3>Multi-Token Prediction (MTP)</h3>
+    <p>MoE architecture in DeepSeek-V3 is accompanied by an MTP auxiliary head that predicts the <em>next 2 tokens simultaneously</em> during training (in addition to the standard next-token loss). At inference the extra heads are discarded. MTP functions as a <strong>speculative decoding bootstrap</strong>: the auxiliary predictions seed the speculative drafts used by DeepSeek's inference system.</p>
+
+    <div class="callout">
+        <div class="callout-label">Training cost claim</div>
+        <p>DeepSeek report training 671B total / 37B active on <strong>2.048M H800 GPU-hours</strong> for the 14.8T token pre-train &mdash; approximately $5.6M at 2024 cloud rates. For comparison, Llama-3 405B (dense, ~6M A100-hours) cost roughly 3&times; more per token processed despite being 60% of the active parameter count.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-06">
+    <div class="slide-number">06</div>
+    <h2>Load Balance Loss &amp; Auxiliary Losses</h2>
+    <p>Without any regularisation, MoE training collapses quickly: a small number of experts receive the majority of tokens (<em>rich-get-richer</em> routing), leaving the others undertrained. Multiple auxiliary loss terms have been proposed to combat this.</p>
+
+    <h3>Auxiliary load-balance loss (Switch Transformer formulation)</h3>
+    <div class="code-block">
+        <div class="code-header">L_aux — importance &times; load balance product</div>
+<pre><code><span class="cm"># f_i  = fraction of tokens dispatched to expert i</span>
+<span class="cm"># P_i  = mean gate probability for expert i over the batch</span>
+<span class="cm"># N    = number of experts,  n = tokens in batch</span>
+
+L_aux = N &times; <span class="fn">sum</span>( f_i &times; P_i  <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(N) )
+
+<span class="cm"># f_i is non-differentiable; P_i provides the gradient signal.</span>
+<span class="cm"># Minimised when all f_i = 1/N  (uniform load).</span>
+
+L_total = L_CE  +  &alpha; &times; L_aux       <span class="cm"># &alpha; ~ 1e-2 to 1e-1</span></code></pre>
+    </div>
+
+    <h3>Router z-loss (ST-MoE, Zoph et al. 2022)</h3>
+    <p>A second stabilisation term penalises large logit magnitudes entering the router softmax. Large logits cause numerical issues in bfloat16 and encourage winner-takes-all behaviour:</p>
+
+    <div class="code-block">
+        <div class="code-header">Router z-loss</div>
+<pre><code>L_z = (<span class="num">1</span>/B) &times; <span class="fn">sum</span>( log(<span class="fn">sum</span>(<span class="fn">exp</span>(x_i)))<sup><span class="num">2</span></sup>  <span class="kw">for</span> x <span class="kw">in</span> batch )
+<span class="cm"># Penalises the log-sum-exp magnitude. Coefficient ~1e-3.</span></code></pre>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Loss term</th><th>What it targets</th><th>Coefficient &alpha;</th></tr></thead>
+            <tbody>
+                <tr><td>L_aux (importance)</td><td>Uniform token distribution across experts</td><td>10<sup>&minus;2</sup> &ndash; 10<sup>&minus;1</sup></td></tr>
+                <tr><td>L_z (router z-loss)</td><td>Router logit magnitude stability</td><td>10<sup>&minus;3</sup></td></tr>
+                <tr><td>L_expert_entropy</td><td>Maximise entropy of expert utilisation</td><td>varies</td></tr>
+                <tr><td>DeepSeek expert-bias</td><td>Learnable per-expert score bias for global balance</td><td>greedy update</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">DeepSeek's bias-based balance approach</div>
+        <p>DeepSeek-V3 drops the differentiable auxiliary loss in favour of <strong>expert bias terms</strong>: each expert has a learnable scalar offset added to its gate score. After each training step, biases for overloaded experts are decremented and underloaded experts incremented by a fixed &delta; = 0.001. This avoids the gradient-vs-CE loss tension that arises when L_aux is too large.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-07">
+    <div class="slide-number">07</div>
+    <h2>Inference &mdash; Expert Parallel, EP Routing Overhead</h2>
+    <p>At inference time, an MoE model with 671B total params cannot fit on a single GPU. The dominant parallelism strategy is <strong>Expert Parallelism (EP)</strong>: shard the experts across devices so each device hosts a subset, then route tokens across the network to the correct device.</p>
+
+    <div class="canvas-wrap">
+        <svg viewBox="0 0 700 260" width="700" height="260" xmlns="http://www.w3.org/2000/svg">
+            <style>
+                .ep-box  { fill: #161b22; stroke: #30363d; stroke-width: 1; }
+                .ep-acc  { fill: rgba(118,185,0,0.08); stroke: #76B900; stroke-width: 1.5; }
+                .ep-lbl  { fill: #e6edf3; font-family: 'Space Grotesk', sans-serif; font-size: 12px; font-weight: 600; }
+                .ep-sub  { fill: #8b949e; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+                .ep-arr  { stroke: #76B900; stroke-width: 1.5; fill: none; marker-end: url(#mhep); }
+                .ep-dat  { stroke: #d2a8ff; stroke-width: 1; stroke-dasharray: 4 3; fill: none; marker-end: url(#mpep); }
+            </style>
+            <defs>
+                <marker id="mhep" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#76B900"/>
+                </marker>
+                <marker id="mpep" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#d2a8ff"/>
+                </marker>
+            </defs>
+            <text x="10" y="20" class="ep-lbl">Expert Parallelism across 4 GPUs (Mixtral 8x7B, 2 experts/GPU)</text>
+            <rect x="10"  y="40" width="140" height="200" rx="6" class="ep-box"/>
+            <text x="20"  y="58" class="ep-lbl">GPU 0</text>
+            <rect x="20"  y="70" width="120" height="40" rx="4" class="ep-acc"/>
+            <text x="30"  y="87" class="ep-lbl">Expert 0</text>
+            <text x="30"  y="101" class="ep-sub">E0 FFN weights</text>
+            <rect x="20"  y="120" width="120" height="40" rx="4" class="ep-acc"/>
+            <text x="30"  y="137" class="ep-lbl">Expert 1</text>
+            <text x="30"  y="151" class="ep-sub">E1 FFN weights</text>
+
+            <rect x="190" y="40" width="140" height="200" rx="6" class="ep-box"/>
+            <text x="200" y="58" class="ep-lbl">GPU 1</text>
+            <rect x="200" y="70" width="120" height="40" rx="4" class="ep-acc"/>
+            <text x="210" y="87" class="ep-lbl">Expert 2</text>
+            <rect x="200" y="120" width="120" height="40" rx="4" class="ep-acc"/>
+            <text x="210" y="137" class="ep-lbl">Expert 3</text>
+
+            <rect x="370" y="40" width="140" height="200" rx="6" class="ep-box"/>
+            <text x="380" y="58" class="ep-lbl">GPU 2</text>
+            <rect x="380" y="70" width="120" height="40" rx="4" class="ep-acc"/>
+            <text x="390" y="87" class="ep-lbl">Expert 4</text>
+            <rect x="380" y="120" width="120" height="40" rx="4" class="ep-acc"/>
+            <text x="390" y="137" class="ep-lbl">Expert 5</text>
+
+            <rect x="550" y="40" width="140" height="200" rx="6" class="ep-box"/>
+            <text x="560" y="58" class="ep-lbl">GPU 3</text>
+            <rect x="560" y="70" width="120" height="40" rx="4" class="ep-acc"/>
+            <text x="570" y="87" class="ep-lbl">Expert 6</text>
+            <rect x="560" y="120" width="120" height="40" rx="4" class="ep-acc"/>
+            <text x="570" y="137" class="ep-lbl">Expert 7</text>
+
+            <path d="M 80 200 L 80 230 L 640 230 L 640 200" class="ep-dat"/>
+            <text x="290" y="248" class="ep-sub">All-to-all: tokens dispatched to correct expert GPU, results gathered back</text>
+        </svg>
+    </div>
+
+    <h3>Routing overhead breakdown</h3>
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>All-to-all communication</h4>
+            <p>Two <code>all_to_all</code> collectives per MoE layer: dispatch (tokens to experts) and combine (results back). With NVLink (600 GB/s) this is fast within a node; across nodes via InfiniBand (400 Gb/s) it becomes the bottleneck. EP degree is chosen to keep experts on one node when possible.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Load imbalance at inference</h4>
+            <p>If a request batch has uneven expert affinity, some GPUs finish early and wait. DeepSeek-V3's inference engine <strong>duplicates hot experts</strong> onto idle GPUs dynamically &mdash; a runtime load-balance step not present during training.</p>
+        </div>
+    </div>
+</section>
+
+<section class="slide" id="slide-08">
+    <div class="slide-number">08</div>
+    <h2>Training Pitfalls &mdash; Dead Experts, Instability</h2>
+    <p>MoE training surfaces several failure modes not seen in dense transformers. Understanding them is essential before attempting a MoE run.</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Dead experts</h4>
+            <p>An expert that receives near-zero routing probability early in training never gets gradient signal, and so remains initialised-noise weights &mdash; which makes it even less likely to be selected. The feedback loop is self-reinforcing. Mitigation: jitter noise, z-loss, and careful warm-up with high &alpha; for L_aux before annealing.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Representation collapse</h4>
+            <p>The router can learn to route all tokens of a given linguistic class (e.g. punctuation) to the same expert, causing that expert to become highly specialised on a low-frequency pattern. Downstream experts then see a biased token distribution. Monitoring expert utilisation entropy during training catches this early.</p>
+        </div>
+    </div>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Loss spikes with large &alpha;</h4>
+            <p>An auxiliary loss coefficient &alpha; that is too large forces the model to sacrifice language modelling quality for perfect load balance. The result is periodic loss spikes as the router fights the CE gradient. Typical safe range: &alpha; &isin; [0.01, 0.1].</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>bfloat16 router overflow</h4>
+            <p>Router logits in bfloat16 have only 8 exponent bits. If expert embedding norms grow during training, softmax inputs saturate. The z-loss term (slide 06) and gradient clipping (max norm 1.0) are the standard mitigations.</p>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Practical checklist before a MoE run</div>
+        <p>1. Initialise all expert FFN weights identically (or with very small variance difference) to break symmetry gently. 2. Monitor <code>router_entropy</code> and <code>expert_utilisation_cv</code> (coefficient of variation) per layer every 100 steps. 3. Start &alpha; = 0.01 for the first 1% of tokens, then anneal to 0.001. 4. Log dead-expert count (experts with &lt;1% of uniform load) &mdash; any persistent dead expert after 5% of training suggests a hyperparameter problem, not just noise.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-09">
+    <div class="slide-number">09</div>
+    <h2>What to Take Away</h2>
+    <ul>
+        <li><strong>MoE decouples capacity from compute.</strong> Total params &rarr; model knowledge; active params &rarr; FLOPs per token. The ratio can be as low as 0.005&times; (Switch-C) for models that spend most of their budget on parameters.</li>
+        <li><strong>Top-K token-choice routing dominates production.</strong> K=2 is the standard. Expert-choice routing eliminates overflow but can leave tokens unprocessed &mdash; only viable for large-batch settings.</li>
+        <li><strong>Mixtral 8x7B proved open-weights MoE at scale.</strong> Top-2-of-8, standard top-K gating, no shared experts. Beats LLaMA-2 70B at LLaMA-2 13B FLOP cost.</li>
+        <li><strong>DeepSeek-V3 pushed fine-grained MoE.</strong> 256 routed + 1 shared expert, top-8 routing. MTP auxiliary head bootstraps speculative decoding. Expert-bias load balance avoids auxiliary-loss tuning.</li>
+        <li><strong>Load balance is the key hyperparameter.</strong> L_aux with &alpha; ~ 0.01 is the workhorse. z-loss stabilises the router. Watch expert utilisation entropy every 100 steps.</li>
+        <li><strong>Expert Parallelism at inference.</strong> Two all-to-all collectives per MoE layer. Keep experts within a node. Hot-expert duplication handles runtime load imbalance.</li>
+    </ul>
+
+    <div class="callout">
+        <div class="callout-label">Where to next</div>
+        <p>Deck 02 moves to a completely different angle on the sequence modelling problem: state-space models (Mamba, S4, RWKV) that replace attention with recurrence &mdash; and ask whether the quadratic attention bottleneck can be avoided entirely rather than masked by sparsity.</p>
+    </div>
+</section>
+
+<footer class="footer">
+    <p>Part of the <a href="https://github.com/BrendanJamesLynskey/LLM_Hub_Modern_Architectures">Modern Architectures Series</a></p>
+    <p style="margin-top: 0.5rem; font-size: 0.8rem;"><a href="https://github.com/BrendanJamesLynskey/LLM_Hub_Modern_Architectures">Back to Series Index</a></p>
+</footer>
+<script>
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.style.opacity = '1';
+                entry.target.style.transform = 'translateY(0)';
+            }
+        });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.slide').forEach(slide => {
+        slide.style.opacity = '0';
+        slide.style.transform = 'translateY(30px)';
+        slide.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+        observer.observe(slide);
+    });
+</script>
+</body>
+</html>
